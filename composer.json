@@ -1,0 +1,31 @@
+{
+    "name": "jfloff/djjob-zf2",
+    "description": "DJJob for zend 2",
+    "license": "Apache-2.0",
+    "type": "library",
+    "keywords": [
+        "djjob",
+        "zf2",
+        "zend framework 2"
+    ],
+    "homepage": "https://github.com/jfloff/djjob-zf2",
+    "authors": [
+        {
+            "name": "Joao Loff",
+            "email": "jfloff@gmail.com",
+            "homepage": "http://jfloff.github.com/"
+        }
+    ],
+    "require": {
+        "php": ">=5.3",
+        "zendframework/zendframework": "2.*"
+    },
+    "autoload": {
+        "psr-0": {
+            "DJJob": "src/"
+        },
+        "classmap": [
+            "./Module.php"
+        ]
+    }
+}
