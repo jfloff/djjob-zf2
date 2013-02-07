@@ -30,16 +30,11 @@ class DJBase {
     private static $db = null;
 
     private static $dsn = "";
-    private static $options = array(
-      "mysql_user" => null,
-      "mysql_pass" => null,
-    );
 
     // use either `configure` or `setConnection`, depending on if
     // you already have a PDO object you can re-use
-    public static function configure($dsn, $options = array()) {
+    public static function configure($dsn) {
         self::$dsn = $dsn;
-        self::$options = array_merge(self::$options, $options);
     }
 
     public static function setLogLevel($const) {
@@ -53,15 +48,10 @@ class DJBase {
     protected static function getConnection() {
         if (self::$db === null) {
             if (!self::$dsn) {
-                throw new DJException("Please tell DJJob how to connect to your database by calling DJJob::configure(\$dsn, [\$options = array()]) or re-using an existing PDO connection by calling DJJob::setConnection(\$pdoObject). If you're using MySQL you'll need to pass the db credentials as separate 'mysql_user' and 'mysql_pass' options. This is a PDO limitation, see [http://stackoverflow.com/questions/237367/why-is-php-pdo-dsn-a-different-format-for-mysql-versus-postgresql] for an explanation.");
+                throw new DJException("Please tell DJJob how to connect to your database by calling DJJob::configure(\$dsn) or re-using an existing PDO connection by calling DJJob::setConnection(\$pdoObject).");
             }
             try {
-                // http://stackoverflow.com/questions/237367/why-is-php-pdo-dsn-a-different-format-for-mysql-versus-postgresql
-                if (self::$options["mysql_user"] !== null) {
-                    self::$db = new PDO(self::$dsn, self::$options["mysql_user"], self::$options["mysql_pass"]);
-                } else {
-                    self::$db = new PDO(self::$dsn);
-                }
+                self::$db = new PDO(self::$dsn);
                 self::$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             } catch (PDOException $e) {
                 throw new Exception("DJJob couldn't connect to the database. PDO said [{$e->getMessage()}]");
@@ -294,8 +284,8 @@ class DJJob extends DJBase {
         $this->runUpdate("
             UPDATE jobs
             SET attempts = attempts + 1,
-                failed_at = IF(attempts >= ?, NOW(), NULL),
-                error = IF(attempts >= ?, ?, NULL)
+                failed_at = CASE WHEN attempts >= ? THEN NOW() ELSE NULL END,
+                error = CASE WHEN attempts >= ? THEN ? ELSE NULL END
             WHERE id = ?",
             array(
                 $this->max_attempts,
@@ -306,7 +296,7 @@ class DJJob extends DJBase {
         );
         $this->log("[JOB] failure in job::{$this->job_id}", self::ERROR);
         $this->releaseLock();
-        
+
         if ($handler && ($this->getAttempts() == $this->max_attempts) && method_exists($handler, '_onDjjobRetryError')) {
           $handler->_onDjjobRetryError($error);
         }
@@ -331,7 +321,7 @@ class DJJob extends DJBase {
             "SELECT handler FROM jobs WHERE id = ?",
             array($this->job_id)
         );
-        foreach ($rs as $r) return unserialize($r["handler"]);
+        foreach ($rs as $r) return unserialize(base64_decode($r["handler"]));
         return false;
     }
 
@@ -347,7 +337,7 @@ class DJJob extends DJBase {
     public static function enqueue($handler, $queue = "default", $run_at = null) {
         $affected = self::runUpdate(
             "INSERT INTO jobs (handler, queue, run_at, created_at) VALUES(?, ?, ?, NOW())",
-            array(serialize($handler), (string) $queue, $run_at)
+            array(base64_encode(serialize($handler)), (string) $queue, $run_at)
         );
 
         if ($affected < 1) {
@@ -364,7 +354,7 @@ class DJJob extends DJBase {
 
         $parameters = array();
         foreach ($handlers as $handler) {
-            $parameters []= serialize($handler);
+            $parameters []= base64_encode(serialize($handler));
             $parameters []= (string) $queue;
             $parameters []= $run_at;
         }
@@ -384,7 +374,7 @@ class DJJob extends DJBase {
     public static function status($queue = "default") {
         $rs = self::runQuery("
             SELECT COUNT(*) as total, COUNT(failed_at) as failed, COUNT(locked_at) as locked
-            FROM `jobs`
+            FROM jobs
             WHERE queue = ?
         ", array($queue));
         $rs = $rs[0];
